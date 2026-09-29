@@ -2,34 +2,103 @@ import streamlit as st
 import requests
 import math
 from datetime import datetime, timedelta, timezone
+import urllib.parse
 
 st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layout="centered")
 
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
 st.write("Yolculuk boyunca güneşin konumunu gerçek astronomik açılarla hesaplayın.")
 
-# Genişletilmiş ve Türkçe karakter duyarlı şehir veritabanı
+# Türkiye'nin 81 İlinin Merkez Koordinatları Veritabanı
 SEHIR_KOORDINATLARI = {
-    "bandırma": (40.3522, 27.9731),
-    "izmir": (38.4192, 27.1287),
-    "istanbul": (41.0082, 28.9784),
+    "adana": (37.0, 35.3213),
+    "adıyaman": (37.7648, 38.2786),
+    "afyonkarahisar": (38.7507, 30.5567),
+    "ağrı": (39.7191, 43.0503),
+    "amasya": (40.6547, 35.8339),
     "ankara": (39.9334, 32.8597),
-    "bursa": (40.1828, 29.0665),
-    "balıkesir": (39.6484, 27.8826),
     "antalya": (36.8969, 30.7133),
+    "artvin": (41.1828, 41.8183),
+    "aydın": (37.8444, 27.8458),
+    "balıkesir": (39.6484, 27.8826),
+    "bandırma": (40.3522, 27.9731),
+    "bilecik": (40.3456, 29.9803),
+    "bingöl": (38.8854, 40.498),
+    "bitlis": (38.4006, 42.1091),
+    "bolu": (40.7359, 31.6061),
+    "burdur": (37.7226, 30.2887),
+    "bursa": (40.1828, 29.0665),
+    "çanakkale": (40.1553, 26.4142),
+    "çankırı": (40.6013, 33.6134),
+    "çorum": (40.5506, 34.9556),
+    "denizli": (37.7765, 29.0864),
+    "diyarbakır": (37.9144, 40.2306),
+    "edirne": (41.6771, 26.5557),
+    "elazığ": (38.681, 39.2264),
+    "erzincan": (39.75, 39.5),
+    "erzurum": (39.9043, 41.2658),
     "eskişehir": (39.7767, 30.5206),
+    "gaziantep": (37.0662, 37.3833),
+    "giresun": (40.9128, 38.3895),
+    "gümüşhane": (40.46, 39.479),
+    "hakkari": (37.5833, 43.7333),
+    "hatay": (36.2, 36.16),
+    "ısparta": (37.7648, 30.5566),
+    "mersin": (36.8, 34.6333),
+    "istanbul": (41.0082, 28.9784),
+    "izmir": (38.4192, 27.1287),
+    "kars": (40.6013, 43.0975),
+    "kastamonu": (41.3887, 33.7827),
+    "kayseri": (38.7312, 35.4787),
+    "kırklareli": (41.7333, 27.2167),
+    "kırşehir": (39.1425, 34.1709),
     "kocaeli": (40.7654, 29.9408),
     "konya": (37.8667, 32.4833),
-    "adana": (37.0, 35.3213),
-    "aydın": (37.8444, 27.8458),
-    "manisa": (38.6191, 27.4289)
+    "kütahya": (39.4242, 29.9833),
+    "malatya": (38.3552, 38.3095),
+    "manisa": (38.6191, 27.4289),
+    "kahramanmaraş": (37.5858, 36.9371),
+    "mardin": (37.3211, 40.7245),
+    "muğla": (37.2153, 28.3636),
+    "muş": (38.9444, 41.5056),
+    "nevşehir": (38.6244, 34.7239),
+    "niğde": (37.9667, 34.6833),
+    "ordu": (40.9839, 37.8764),
+    "rize": (41.02, 40.523),
+    "sakarya": (40.7569, 30.3783),
+    "samsun": (41.2867, 36.33),
+    "siirt": (37.9333, 41.95),
+    "sinop": (42.0231, 35.1531),
+    "sivas": (39.7477, 37.0179),
+    "tekirdağ": (40.9833, 27.5167),
+    "tokat": (40.3167, 36.55),
+    "trabzon": (41.0015, 39.7178),
+    "tunceli": (39.1078, 39.5401),
+    "şanlıurfa": (37.1591, 38.7969),
+    "uşak": (38.6823, 29.4082),
+    "van": (38.4891, 43.4089),
+    "yozgat": (39.8181, 34.8147),
+    "zonguldak": (41.4564, 31.7987),
+    "aksaray": (38.3687, 34.037),
+    "bayburt": (40.2552, 40.2249),
+    "karaman": (37.1759, 33.2287),
+    "kırıkkale": (39.8468, 33.5153),
+    "batman": (37.8812, 41.1351),
+    "şırnak": (37.5164, 42.4611),
+    "bartın": (41.6386, 32.3375),
+    "ardahan": (41.1105, 42.7022),
+    "ığdır": (39.9167, 44.0333),
+    "yalova": (40.65, 29.0),
+    "karabük": (41.2, 32.62),
+    "kilis": (36.7184, 37.1212),
+    "osmaniye": (37.0742, 36.2467),
+    "düzce": (40.8438, 31.1565)
 }
 
 def turkce_temizle(metin):
     return metin.strip().replace('İ', 'i').replace('I', 'ı').lower()
 
 def calculate_bearing(lat1, lon1, lat2, lon2):
-    """İki nokta arasındaki taşıt gidiş yönünü (kerteriz açısını) hesaplar."""
     lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
     dlon_rad = math.radians(lon2 - lon1)
     
@@ -38,7 +107,6 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 def get_solar_position(lat, lon, dt_utc):
-    """Verilen UTC zamanı ve koordinat için güneşin azimut ve yükseklik açısını hesaplar."""
     day_of_year = dt_utc.timetuple().tm_yday
     hour = dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0
     
@@ -74,26 +142,23 @@ def get_solar_position(lat, lon, dt_utc):
     return azimuth_deg, elevation_deg
 
 def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=20):
-    """Rota boyunca zaman örneklemesi yaparak güneş alma oranlarını hesaplar."""
     bearing = calculate_bearing(lat1, lon1, lat2, lon2)
     sol_count = 0
     sag_count = 0
     gunduz_count = 0
     
-    tr_tz = timezone(timedelta(hours=3)) # Türkiye Zaman Dilimi (UTC+3)
+    tr_tz = timezone(timedelta(hours=3))
     
     for i in range(samples):
         fraction = i / max(1, (samples - 1))
         curr_lat = lat1 + fraction * (lat2 - lat1)
         curr_lon = lon1 + fraction * (lon2 - lon1)
         
-        # O andaki zaman (UTC cinsinden)
         curr_dt_tr = kalkis_dt + timedelta(minutes=fraction * toplam_sure_dk)
         curr_dt_utc = curr_dt_tr.replace(tzinfo=tr_tz).astimezone(timezone.utc)
         
         azimuth, elevation = get_solar_position(curr_lat, curr_lon, curr_dt_utc)
         
-        # Güneş ufkun üzerindeyse (Gündüz vakti)
         if elevation > 0:
             gunduz_count += 1
             rel_angle = (azimuth - bearing + 360) % 360
@@ -103,7 +168,7 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
                 sol_count += 1
 
     if gunduz_count == 0:
-        return 0, 0, True # Yolculuk tamamen gece geçmektedir
+        return 0, 0, True
         
     sol_orani = round((sol_count / gunduz_count) * 100)
     sag_orani = round((sag_count / gunduz_count) * 100)
@@ -112,7 +177,7 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
 with col1:
-    kalkis = st.text_input("Kalkış Yeri (Şehir)", "Ankara")
+    kalkis = st.text_input("Kalkış Yeri (Şehir)", "Muş")
 with col2:
     varis = st.text_input("Varış Yeri (Şehir)", "İzmir")
 
@@ -120,7 +185,7 @@ kalkis_saati = st.time_input("Kalkış Saati", datetime.strptime("10:00", "%H:%M
 
 col3, col4 = st.columns(2)
 with col3:
-    mola_sayisi = st.number_input("Mola Sayısı", min_value=0, max_value=5, value=2)
+    mola_sayisi = st.number_input("Mola Sayısı", min_value=0, max_value=5, value=1)
 with col4:
     mola_suresi = st.number_input("Her Mola Süresi (Dakika)", min_value=0, max_value=60, value=20)
 
@@ -135,9 +200,11 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 if sehir_temiz in SEHIR_KOORDINATLARI:
                     return SEHIR_KOORDINATLARI[sehir_temiz]
                 
+                # Yedek olarak harita servisi sorgusu
                 try:
-                    url = f"https://nominatim.openstreetmap.org/search?q={sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V4'}
+                    encoded_sehir = urllib.parse.quote(sehir.strip())
+                    url = f"https://nominatim.openstreetmap.org/search?q={encoded_sehir},Turkey&format=json"
+                    headers = {'User-Agent': 'BusShadowApp-V6'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -151,10 +218,10 @@ if st.button("Gölge Analizini Başlat", type="primary"):
             lat2, lon2 = koordinat_bul(varis)
 
             if lat1 is None or lat2 is None:
-                st.error(f"'{kalkis}' veya '{varis}' şehri veritabanında bulunamadı. Lütfen listeden bir şehir seçin.")
+                st.error(f"'{kalkis}' veya '{varis}' şehri bulunamadı. Lütfen adını kontrol edin.")
             else:
                 osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-                surus_suresi_dk = 300 
+                surus_suresi_dk = 480 
                 try:
                     res = requests.get(osrm_url, timeout=5)
                     res_data = res.json()
@@ -170,10 +237,8 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
-                # Gerçek Astronomik Hesaplama
                 sol_gunes_orani, sag_gunes_orani, gece_mi = analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk)
                 
-                # Sonuçlar ve Kroki
                 st.success("Gerçek Astronomik Hesaplama Tamamlandı!")
                 st.info(f"📍 **Rota:** {kalkis} ➔ {varis}")
                 
@@ -198,7 +263,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                             st.success(f"🟢 Gölgede / Az Güneşli\n\n(Güneş Alma Oranı: %{sol_gunes_orani})")
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
-                            st.error(f"☀️️ Güneş Alır\n\n(Güneş Alma Oranı: %{sol_gunes_orani})")
+                            st.error(f"☀️ Güneş Alır\n\n(Güneş Alma Oranı: %{sol_gunes_orani})")
                             
                     with bus_col_koridor:
                         st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
@@ -209,5 +274,5 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                             st.success(f"🟢 Gölgede / Az Güneşli\n\n(Güneş Alma Oranı: %{sag_gunes_orani})")
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
-                            st.error(f"☀️ Güneş Alır\n\n(Güneş Alma Oranı: %{sag_gunes_orani})")
-                            st.markdown("⚠️️ **Dikkat**")
+                            st.error(f"☀️️ Güneş Alır\n\n(Güneş Alma Oranı: %{sag_gunes_orani})")
+                            st.markdown("⚠️ **Dikkat**")
