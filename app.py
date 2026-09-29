@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
+import math
+from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layout="centered")
 
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
-st.write("Yolculuk boyunca güneşin hangi taraftan vuracağını görsel olarak öğrenin.")
+st.write("Yolculuk boyunca güneşin konumunu gerçek astronomik açılarla hesaplayın.")
 
 # Genişletilmiş ve Türkçe karakter duyarlı şehir veritabanı
 SEHIR_KOORDINATLARI = {
@@ -25,8 +26,88 @@ SEHIR_KOORDINATLARI = {
 }
 
 def turkce_temizle(metin):
-    metin = metin.strip().replace('İ', 'i').replace('I', 'ı').lower()
-    return metin
+    return metin.strip().replace('İ', 'i').replace('I', 'ı').lower()
+
+def calculate_bearing(lat1, lon1, lat2, lon2):
+    """İki nokta arasındaki taşıt gidiş yönünü (kerteriz açısını) hesaplar."""
+    lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
+    dlon_rad = math.radians(lon2 - lon1)
+    
+    y = math.sin(dlon_rad) * math.cos(lat2_rad)
+    x = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dlon_rad)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+def get_solar_position(lat, lon, dt_utc):
+    """Verilen UTC zamanı ve koordinat için güneşin azimut ve yükseklik açısını hesaplar."""
+    day_of_year = dt_utc.timetuple().tm_yday
+    hour = dt_utc.hour + dt_utc.minute / 60.0 + dt_utc.second / 3600.0
+    
+    gamma = (2 * math.pi / 365.0) * (day_of_year - 1 + (hour - 12) / 24.0)
+    eqtime = 229.18 * (0.000075 + 0.001868 * math.cos(gamma) - 0.032077 * math.sin(gamma) 
+                      - 0.014615 * math.cos(2 * gamma) - 0.040849 * math.sin(2 * gamma))
+    
+    decl = 0.006918 - 0.399912 * math.cos(gamma) + 0.070257 * math.sin(gamma) \
+           - 0.006758 * math.cos(2 * gamma) + 0.000907 * math.sin(2 * gamma) \
+           - 0.002697 * math.cos(3 * gamma) + 0.00148 * math.sin(3 * gamma)
+    
+    time_offset = eqtime + 4 * lon
+    tst = hour * 60 + time_offset
+    
+    ha = (tst / 4.0) - 180.0
+    ha_rad = math.radians(ha)
+    lat_rad = math.radians(lat)
+    
+    cos_zenith = math.sin(lat_rad) * math.sin(decl) + math.cos(lat_rad) * math.cos(decl) * math.cos(ha_rad)
+    cos_zenith = max(-1.0, min(1.0, cos_zenith))
+    zenith_rad = math.acos(cos_zenith)
+    elevation_deg = 90.0 - math.degrees(zenith_rad)
+    
+    sin_zenith = math.sin(zenith_rad)
+    if sin_zenith == 0:
+        azimuth_deg = 180.0
+    else:
+        cos_az = (math.sin(decl) - math.sin(lat_rad) * cos_zenith) / (math.cos(lat_rad) * sin_zenith)
+        cos_az = max(-1.0, min(1.0, cos_az))
+        az_rad = math.acos(cos_az)
+        azimuth_deg = (360.0 - math.degrees(az_rad)) if ha > 0 else math.degrees(az_rad)
+        
+    return azimuth_deg, elevation_deg
+
+def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=20):
+    """Rota boyunca zaman örneklemesi yaparak güneş alma oranlarını hesaplar."""
+    bearing = calculate_bearing(lat1, lon1, lat2, lon2)
+    sol_count = 0
+    sag_count = 0
+    gunduz_count = 0
+    
+    tr_tz = timezone(timedelta(hours=3)) # Türkiye Zaman Dilimi (UTC+3)
+    
+    for i in range(samples):
+        fraction = i / max(1, (samples - 1))
+        curr_lat = lat1 + fraction * (lat2 - lat1)
+        curr_lon = lon1 + fraction * (lon2 - lon1)
+        
+        # O andaki zaman (UTC cinsinden)
+        curr_dt_tr = kalkis_dt + timedelta(minutes=fraction * toplam_sure_dk)
+        curr_dt_utc = curr_dt_tr.replace(tzinfo=tr_tz).astimezone(timezone.utc)
+        
+        azimuth, elevation = get_solar_position(curr_lat, curr_lon, curr_dt_utc)
+        
+        # Güneş ufkun üzerindeyse (Gündüz vakti)
+        if elevation > 0:
+            gunduz_count += 1
+            rel_angle = (azimuth - bearing + 360) % 360
+            if 0 < rel_angle < 180:
+                sag_count += 1
+            elif 180 < rel_angle < 360:
+                sol_count += 1
+
+    if gunduz_count == 0:
+        return 0, 0, True # Yolculuk tamamen gece geçmektedir
+        
+    sol_orani = round((sol_count / gunduz_count) * 100)
+    sag_orani = round((sag_count / gunduz_count) * 100)
+    return sol_orani, sag_orani, False
 
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
@@ -47,7 +128,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
     if not kalkis or not varis:
         st.warning("Lütfen kalkış ve varış yerlerini giriniz.")
     else:
-        with st.spinner("Rota ve güneş açıları hesaplanıyor..."):
+        with st.spinner("Gerçek güneş pozisyonu ve rotalar hesaplanıyor..."):
             
             def koordinat_bul(sehir):
                 sehir_temiz = turkce_temizle(sehir)
@@ -56,7 +137,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 
                 try:
                     url = f"https://nominatim.openstreetmap.org/search?q={sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V3'}
+                    headers = {'User-Agent': 'BusShadowApp-V4'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -89,8 +170,11 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
+                # Gerçek Astronomik Hesaplama
+                sol_gunes_orani, sag_gunes_orani, gece_mi = analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk)
+                
                 # Sonuçlar ve Kroki
-                st.success("Hesaplama Başarılı!")
+                st.success("Gerçek Astronomik Hesaplama Tamamlandı!")
                 st.info(f"📍 **Rota:** {kalkis} ➔ {varis}")
                 
                 m_col1, m_col2, m_col3 = st.columns(3)
@@ -100,28 +184,30 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 
                 st.markdown("---")
                 st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
-                st.write("Yolculuk boyunca güneşin konumuna göre taraf analizi:")
                 
-                sol_gunes_orani = 30  
-                sag_gunes_orani = 70  
-                
-                bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
-                
-                with bus_col_sol:
-                    st.markdown("#### 🪟 Sol Taraf")
-                    if sol_gunes_orani < 50:
-                        st.success(f"🟢 Gölgede\n\n(Süre: %{100 - sol_gunes_orani})")
-                        st.markdown("✨ **Tavsiye Edilen**")
-                    else:
-                        st.error(f"☀️ Güneş Alır\n\n(Süre: %{sol_gunes_orani})")
-                        
-                with bus_col_koridor:
-                    st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
+                if gece_mi:
+                    st.info("🌙 Yolculuk tamamen gece saatlerine denk geldiği için doğrudan güneş ışığı maruziyeti yoktur. İstediğiniz koltuğu seçebilirsiniz.")
+                else:
+                    st.write("Hesaplanan gerçek astronomik güneş açılarına göre taraf analizi:")
                     
-                with bus_col_sag:
-                    st.markdown("#### 🪟 Sağ Taraf")
-                    if sag_gunes_orani < 50:
-                        st.success(f"🟢 Gölgede\n\n(Süre: %{100 - sag_gunes_orani})")
-                    else:
-                        st.error(f"☀️ Güneş Alır\n\n(Süre: %{sag_gunes_orani})")
-                        st.markdown("⚠️ **Dikkat**")
+                    bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
+                    
+                    with bus_col_sol:
+                        st.markdown("#### 🪟 Sol Taraf")
+                        if sol_gunes_orani <= sag_gunes_orani:
+                            st.success(f"🟢 Gölgede / Az Güneşli\n\n(Güneş Alma Oranı: %{sol_gunes_orani})")
+                            st.markdown("✨ **Tavsiye Edilen**")
+                        else:
+                            st.error(f"☀️️ Güneş Alır\n\n(Güneş Alma Oranı: %{sol_gunes_orani})")
+                            
+                    with bus_col_koridor:
+                        st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
+                        
+                    with bus_col_sag:
+                        st.markdown("#### 🪟 Sağ Taraf")
+                        if sag_gunes_orani < sol_gunes_orani:
+                            st.success(f"🟢 Gölgede / Az Güneşli\n\n(Güneş Alma Oranı: %{sag_gunes_orani})")
+                            st.markdown("✨ **Tavsiye Edilen**")
+                        else:
+                            st.error(f"☀️ Güneş Alır\n\n(Güneş Alma Oranı: %{sag_gunes_orani})")
+                            st.markdown("⚠️️ **Dikkat**")
