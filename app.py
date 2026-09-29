@@ -141,7 +141,7 @@ def get_solar_position(lat, lon, dt_utc):
         
     return azimuth_deg, elevation_deg
 
-def en_ yakin_sehir_bul(lat, lon):
+def en_yakin_sehir_bul(lat, lon):
     """Verilen koordinata en yakın şehri 81 il veritabanından bulur."""
     en_yakin_il = "Bilinmeyen Konum"
     min_mesafe = float('inf')
@@ -174,10 +174,9 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
         
         azimuth, elevation = get_solar_position(curr_lat, curr_lon, curr_dt_utc)
         
-        # Batış veya Doğuş Tespiti ve Konum Belirleme
         if prev_elevation is not None:
             if prev_elevation > 0 and elevation <= 0:
-                yakin_konum = en_ yakın_sehir_bul(curr_lat, curr_lon)
+                yakin_konum = en_yakin_sehir_bul(curr_lat, curr_lon)
                 gunes_olaylari.append({
                     "tur": "🌇 Güneş Batımı",
                     "saat": curr_dt_tr.strftime("%H:%M"),
@@ -297,13 +296,11 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 m_col2.metric("Mola", f"{toplam_mola_dk} dk")
                 m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
                 
-                # Gündüz ve Gece Oranları Gösterimi
                 st.markdown("---")
                 col_g, col_ge = st.columns(2)
                 col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
                 col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
                 
-                # Güneş Batış / Doğuş ve Konum Bilgilendirmesi
                 if gunes_olaylari:
                     st.markdown("---")
                     st.subheader("🕒 Rota Üzerindeki Güneş Olayları ve Konumları")
