@@ -7,7 +7,7 @@ st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layo
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
 st.write("Yolculuk boyunca güneşin hangi taraftan vuracağını görsel olarak öğrenin.")
 
-# Popüler şehirler koordinat veritabanı (Harita servisi engeline karşı %100 garanti)
+# Genişletilmiş ve Türkçe karakter duyarlı şehir veritabanı
 SEHIR_KOORDINATLARI = {
     "bandırma": (40.3522, 27.9731),
     "izmir": (38.4192, 27.1287),
@@ -24,10 +24,15 @@ SEHIR_KOORDINATLARI = {
     "manisa": (38.6191, 27.4289)
 }
 
+def turkce_temizle(metin):
+    # Türkçe büyük/küçük harf sorununu çözen akıllı dönüştürücü
+    metin = metin.strip().replace('İ', 'i').replace('I', 'ı').lower()
+    return metin
+
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
 with col1:
-    kalkis = st.text_input("Kalkış Yeri (Şehir)", "Bandırma")
+    kalkis = st.text_input("Kalkış Yeri (Şehir)", "Ankara")
 with col2:
     varis = st.text_input("Varış Yeri (Şehir)", "İzmir")
 
@@ -46,15 +51,14 @@ if st.button("Gölge Analizini Başlat", type="primary"):
         with st.spinner("Rota ve güneş açıları hesaplanıyor..."):
             
             def koordinat_bul(sehir):
-                sehir_temiz = sehir.strip().lower()
-                # Önce yerel veritabanımıza bakıyoruz (Asla hata vermez)
+                sehir_temiz = turkce_temizle(sehir)
                 if sehir_temiz in SEHIR_KOORDINATLARI:
                     return SEHIR_KOORDINATLARI[sehir_temiz]
                 
-                # Listede yoksa internetten sorgula
+                # İnternet üzerinden arama yedeği
                 try:
                     url = f"https://nominatim.openstreetmap.org/search?q={sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V2'}
+                    headers = {'User-Agent': 'BusShadowApp-V3'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -68,11 +72,10 @@ if st.button("Gölge Analizini Başlat", type="primary"):
             lat2, lon2 = koordinat_bul(varis)
 
             if lat1 is None or lat2 is None:
-                st.error("Girilen şehir veritabanında bulunamadı. Lütfen 'Bandırma', 'İzmir', 'İstanbul', 'Ankara' gibi yaygın bir şehir deneyin.")
+                st.error(f"'{kalkis}' veya '{varis'}' şehri veritabanında bulunamadı. Lütfen listeden bir şehir seçin.")
             else:
-                # OSRM Rota Hesabı
                 osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-                surus_suresi_dk = 240 # Varsayılan güvenli süre (4 saat)
+                surus_suresi_dk = 300 
                 try:
                     res = requests.get(osrm_url, timeout=5)
                     res_data = res.json()
@@ -88,7 +91,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
-                # Sonuçları Gösterme
+                # Sonuçlar ve Kroki
                 st.success("Hesaplama Başarılı!")
                 st.info(f"📍 **Rota:** {kalkis} ➔ {varis}")
                 
@@ -101,9 +104,8 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
                 st.write("Yolculuk boyunca güneşin konumuna göre taraf analizi:")
                 
-                # Görsel Otobüs Krokisi Sütunları
-                sol_gunes_orani = 25  
-                sag_gunes_orani = 75  
+                sol_gunes_orani = 30  
+                sag_gunes_orani = 70  
                 
                 bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
                 
