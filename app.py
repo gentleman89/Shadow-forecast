@@ -173,13 +173,16 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     gunduz_orani = round((gunduz_count / samples) * 100)
     gece_orani = round((gece_count / samples) * 100)
     
+    gunduz_sure_dk = int(toplam_sure_dk * (gunduz_count / samples))
+    gece_sure_dk = toplam_sure_dk - gunduz_sure_dk
+    
     if gunduz_count == 0:
-        return 0, 0, 0, 100, True
+        return 0, 0, 0, 100, 0, toplam_sure_dk, True
         
     sol_orani = round((sol_count / gunduz_count) * 100)
     sag_orani = round((sag_count / gunduz_count) * 100)
     
-    return sol_orani, sag_orani, gunduz_orani, gece_orani, False
+    return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, False
 
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
@@ -243,7 +246,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
-                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, tamamen_gece_mi = analyze_sun_exposure(
+                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, tamamen_gece_mi = analyze_sun_exposure(
                     lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100
                 )
                 
@@ -255,11 +258,11 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 m_col2.metric("Mola", f"{toplam_mola_dk} dk")
                 m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
                 
-                # Gündüz ve Gece Oranları Gösterimi
+                # Gündüz ve Gece Oranları ve Saatleri Gösterimi
                 st.markdown("---")
                 col_g, col_ge = st.columns(2)
-                col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani}")
-                col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani}")
+                col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
+                col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
                 
                 st.markdown("---")
                 st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
@@ -289,4 +292,4 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
                             st.error(f"☀️ Güneş Alır\n\n(Gündüz Süresine Göre: %{sag_gunes_orani})")
-                            st.markdown("⚠️️ **Dikkat**")
+                            st.markdown("⚠️ **Dikkat**")
