@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
@@ -6,8 +5,9 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layout="centered")
 
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
-st.write("Yolculuk boyunca güneşin hangi taraftan vuracağını hesaplayın.")
+st.write("Yolculuk boyunca güneşin hangi taraftan vuracağını görsel olarak öğrenin.")
 
+# Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
 with col1:
     kalkis = st.text_input("Kalkış Yeri (Şehir)", "Bandırma")
@@ -55,15 +55,42 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                     kalkis_dt = datetime.combine(bugun, kalkis_saati)
                     varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                     
+                    # Sonuçları Gösterme
                     st.success("Hesaplama Başarılı!")
                     st.info(f"📍 **Rota:** {kalkis} ➔ {varis}")
-                    st.metric("Tahmini Sürüş Süresi", f"{surus_suresi_dk // 60} saat {surus_suresi_dk % 60} dakika")
-                    st.metric("Toplam Mola Süresi", f"{toplam_mola_dk} dakika ({mola_sayisi} mola)")
-                    st.metric("Tahmini Varış Saati", varis_dt.strftime("%H:%M"))
+                    
+                    m_col1, m_col2, m_col3 = st.columns(3)
+                    m_col1.metric("Sürüş Süresi", f"{surus_suresi_dk // 60} sa {surus_suresi_dk % 60} dk")
+                    m_col2.metric("Mola", f"{toplam_mola_dk} dk")
+                    m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
                     
                     st.markdown("---")
-                    st.subheader("☀️ Güneş Analizi Sonucu (Simülasyon)")
-                    st.write("Yolculuğun yönüne ve kalkış saatine göre ön analiz yapıldı:")
-                    st.warning("Bu rotada güneş ağırlıklı olarak **SAĞ** taraftan vuracaktır. Güneşten korunmak için **SOL CAM KENARI** tercih etmeniz önerilir.")
+                    st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
+                    st.write("Yolculuk boyunca güneşin konumuna göre taraf analizi:")
+                    
+                    # Görsel Otobüs Krokisi Sütunları
+                    sol_gunes_orani = 25  # Simüle edilmiş oran (İleride gerçek açıyla hesaplanacak)
+                    sag_gunes_orani = 75  
+                    
+                    bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
+                    
+                    with bus_col_sol:
+                        st.markdown("#### 🪟 Sol Taraf")
+                        if sol_gunes_orani < 50:
+                            st.success(f"🟢 Gölgede\n\n(Süre: %{100 - sol_gunes_orani})")
+                            st.markdown("✨ **Tavsiye Edilen**")
+                        else:
+                            st.error(f"☀️ Güneş Alır\n\n(Süre: %{sol_gunes_orani})")
+                            
+                    with bus_col_koridor:
+                        st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
+                        
+                    with bus_col_sag:
+                        st.markdown("#### 🪟 Sağ Taraf")
+                        if sag_gunes_orani < 50:
+                            st.success(f"🟢 Gölgede\n\n(Süre: %{100 - sag_gunes_orani})")
+                        else:
+                            st.error(f"☀️ Güneş Alır\n\n(Süre: %{sag_gunes_orani})")
+                            st.markdown("⚠️ **Dikkat**")
                 else:
                     st.error("İki şehir arasında karayolu rotası hesaplanamadı.")
