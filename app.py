@@ -7,7 +7,7 @@ import urllib.parse
 st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layout="centered")
 
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
-st.write("Yolculuk boyunca gündüz/gece sürelerini, güneş batış anlarını ve açıları yüksek hassasiyetle hesaplayın.")
+st.write("Yolculuk boyunca gündüz/gece sürelerini, güneş batış anlarını ve konumlarını yüksek hassasiyetle hesaplayın.")
 
 # Türkiye'nin 81 İlinin Merkez Koordinatları Veritabanı
 SEHIR_KOORDINATLARI = {
@@ -141,6 +141,17 @@ def get_solar_position(lat, lon, dt_utc):
         
     return azimuth_deg, elevation_deg
 
+def en_ yakin_sehir_bul(lat, lon):
+    """Verilen koordinata en yakın şehri 81 il veritabanından bulur."""
+    en_yakin_il = "Bilinmeyen Konum"
+    min_mesafe = float('inf')
+    for il, (il_lat, il_lon) in SEHIR_KOORDINATLARI.items():
+        mesafe = (lat - il_lat)**2 + (lon - il_lon)**2
+        if mesafe < min_mesafe:
+            min_mesafe = mesafe
+            en_yakin_il = il.capitalize()
+    return en_yakin_il
+
 def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100):
     bearing = calculate_bearing(lat1, lon1, lat2, lon2)
     sol_count = 0
@@ -163,19 +174,25 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
         
         azimuth, elevation = get_solar_position(curr_lat, curr_lon, curr_dt_utc)
         
-        # Batış veya Doğuş Tespiti
+        # Batış veya Doğuş Tespiti ve Konum Belirleme
         if prev_elevation is not None:
             if prev_elevation > 0 and elevation <= 0:
+                yakin_konum = en_ yakın_sehir_bul(curr_lat, curr_lon)
                 gunes_olaylari.append({
                     "tur": "🌇 Güneş Batımı",
                     "saat": curr_dt_tr.strftime("%H:%M"),
-                    "gecen_sure_dk": int(fraction * toplam_sure_dk)
+                    "gecen_sure_dk": int(fraction * toplam_sure_dk),
+                    "konum": yakin_konum,
+                    "koordinat": (round(curr_lat, 4), round(curr_lon, 4))
                 })
             elif prev_elevation <= 0 and elevation > 0:
+                yakin_konum = en_yakin_sehir_bul(curr_lat, curr_lon)
                 gunes_olaylari.append({
                     "tur": "🌅 Güneş Doğuşu",
                     "saat": curr_dt_tr.strftime("%H:%M"),
-                    "gecen_sure_dk": int(fraction * toplam_sure_dk)
+                    "gecen_sure_dk": int(fraction * toplam_sure_dk),
+                    "konum": yakin_konum,
+                    "koordinat": (round(curr_lat, 4), round(curr_lon, 4))
                 })
         prev_elevation = elevation
         
@@ -225,7 +242,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
     if not kalkis or not varis:
         st.warning("Lütfen kalkış ve varış yerlerini giriniz.")
     else:
-        with st.spinner("Gündüz/Gece oranları, güneş batış anları ve açılar hesaplanıyor..."):
+        with st.spinner("Gündüz/Gece oranları, güneş batış anları ve konumlar hesaplanıyor..."):
             
             def koordinat_bul(sehir):
                 sehir_temiz = turkce_temizle(sehir)
@@ -235,7 +252,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 try:
                     encoded_sehir = urllib.parse.quote(sehir.strip())
                     url = f"https://nominatim.openstreetmap.org/search?q={encoded_sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V10'}
+                    headers = {'User-Agent': 'BusShadowApp-V11'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -286,15 +303,17 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
                 col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
                 
-                # Güneş Batış / Doğuş Bilgilendirmesi
+                # Güneş Batış / Doğuş ve Konum Bilgilendirmesi
                 if gunes_olaylari:
                     st.markdown("---")
-                    st.subheader("🕒 Rota Üzerindeki Güneş Olayları")
+                    st.subheader("🕒 Rota Üzerindeki Güneş Olayları ve Konumları")
                     for olay in gunes_olaylari:
                         saat_str = olay["saat"]
                         gecen_saat = olay["gecen_sure_dk"] // 60
                         gecen_dakika = olay["gecen_sure_dk"] % 60
-                        st.info(f"{olay['tur']}: Yolculuğun **{gecen_saat} saat {gecen_dakika} dakikasında** (Saat **{saat_str}** civarında) gerçekleşecektir.")
+                        konum_adi = olay["konum"]
+                        lat_lon = olay["koordinat"]
+                        st.info(f"{olay['tur']}: Yolculuğun **{gecen_saat} saat {gecen_dakika} dakikasında** (Saat **{saat_str}** civarında), **{konum_adi}** yakınlarında (GPS: {lat_lon}) gerçekleşecektir.")
                 
                 st.markdown("---")
                 st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
