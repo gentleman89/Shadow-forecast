@@ -177,12 +177,15 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     gece_sure_dk = toplam_sure_dk - gunduz_sure_dk
     
     if gunduz_count == 0:
-        return 0, 0, 0, 100, 0, toplam_sure_dk, True
+        return 0, 0, 0, 100, 0, toplam_sure_dk, 0, 0, True
         
     sol_orani = round((sol_count / gunduz_count) * 100)
     sag_orani = round((sag_count / gunduz_count) * 100)
     
-    return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, False
+    sol_sure_dk = int(gunduz_sure_dk * (sol_count / gunduz_count))
+    sag_sure_dk = int(gunduz_sure_dk * (sag_count / gunduz_count))
+    
+    return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, sol_sure_dk, sag_sure_dk, False
 
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
@@ -213,7 +216,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 try:
                     encoded_sehir = urllib.parse.quote(sehir.strip())
                     url = f"https://nominatim.openstreetmap.org/search?q={encoded_sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V8'}
+                    headers = {'User-Agent': 'BusShadowApp-V9'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -246,7 +249,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
-                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, tamamen_gece_mi = analyze_sun_exposure(
+                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, sol_dk, sag_dk, tamamen_gece_mi = analyze_sun_exposure(
                     lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100
                 )
                 
@@ -275,21 +278,23 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                     bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
                     
                     with bus_col_sol:
+                        sol_saat_metin = f"%{sol_gunes_orani} ({sol_dk // 60} sa {sol_dk % 60} dk)"
                         st.markdown("#### 🪟 Sol Taraf")
                         if sol_gunes_orani <= sag_gunes_orani:
-                            st.success(f"🟢 Gölgede / Az Güneşli\n\n(Gündüz Süresine Göre: %{sol_gunes_orani})")
+                            st.success(f"🟢 Gölgede / Az Güneşli\n\n({sol_saat_metin})")
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
-                            st.error(f"☀️ Güneş Alır\n\n(Gündüz Süresine Göre: %{sol_gunes_orani})")
+                            st.error(f"☀️ Güneş Alır\n\n({sol_saat_metin})")
                             
                     with bus_col_koridor:
                         st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
                         
                     with bus_col_sag:
+                        sag_saat_metin = f"%{sag_gunes_orani} ({sag_dk // 60} sa {sag_dk % 60} dk)"
                         st.markdown("#### 🪟 Sağ Taraf")
                         if sag_gunes_orani < sol_gunes_orani:
-                            st.success(f"🟢 Gölgede / Az Güneşli\n\n(Gündüz Süresine Göre: %{sag_gunes_orani})")
+                            st.success(f"🟢 Gölgede / Az Güneşli\n\n({sag_saat_metin})")
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
-                            st.error(f"☀️ Güneş Alır\n\n(Gündüz Süresine Göre: %{sag_gunes_orani})")
+                            st.error(f"☀️ Güneş Alır\n\n({sag_saat_metin})")
                             st.markdown("⚠️ **Dikkat**")
