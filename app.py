@@ -7,7 +7,7 @@ import urllib.parse
 st.set_page_config(page_title="Otobüs Gölge Asistanı", page_icon="🚌", layout="centered")
 
 st.title("🚌 Otobüs Yolculuğu Gölge Asistanı")
-st.write("Yolculuk boyunca gündüz/gece sürelerini ve güneş açılarını yüksek hassasiyetle hesaplayın.")
+st.write("Yolculuk boyunca gündüz/gece sürelerini, güneş batış anlarını ve açıları yüksek hassasiyetle hesaplayın.")
 
 # Türkiye'nin 81 İlinin Merkez Koordinatları Veritabanı
 SEHIR_KOORDINATLARI = {
@@ -148,6 +148,9 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     gunduz_count = 0
     gece_count = 0
     
+    gunes_olaylari = []
+    prev_elevation = None
+    
     tr_tz = timezone(timedelta(hours=3))
     
     for i in range(samples):
@@ -159,6 +162,22 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
         curr_dt_utc = curr_dt_tr.replace(tzinfo=tr_tz).astimezone(timezone.utc)
         
         azimuth, elevation = get_solar_position(curr_lat, curr_lon, curr_dt_utc)
+        
+        # Batış veya Doğuş Tespiti
+        if prev_elevation is not None:
+            if prev_elevation > 0 and elevation <= 0:
+                gunes_olaylari.append({
+                    "tur": "🌇 Güneş Batımı",
+                    "saat": curr_dt_tr.strftime("%H:%M"),
+                    "gecen_sure_dk": int(fraction * toplam_sure_dk)
+                })
+            elif prev_elevation <= 0 and elevation > 0:
+                gunes_olaylari.append({
+                    "tur": "🌅 Güneş Doğuşu",
+                    "saat": curr_dt_tr.strftime("%H:%M"),
+                    "gecen_sure_dk": int(fraction * toplam_sure_dk)
+                })
+        prev_elevation = elevation
         
         if elevation > 0:
             gunduz_count += 1
@@ -177,7 +196,7 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     gece_sure_dk = toplam_sure_dk - gunduz_sure_dk
     
     if gunduz_count == 0:
-        return 0, 0, 0, 100, 0, toplam_sure_dk, 0, 0, True
+        return 0, 0, 0, 100, 0, toplam_sure_dk, 0, 0, gunes_olaylari, True
         
     sol_orani = round((sol_count / gunduz_count) * 100)
     sag_orani = round((sag_count / gunduz_count) * 100)
@@ -185,7 +204,7 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     sol_sure_dk = int(gunduz_sure_dk * (sol_count / gunduz_count))
     sag_sure_dk = int(gunduz_sure_dk * (sag_count / gunduz_count))
     
-    return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, sol_sure_dk, sag_sure_dk, False
+    return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, sol_sure_dk, sag_sure_dk, gunes_olaylari, False
 
 # Kullanıcı Giriş Alanları
 col1, col2 = st.columns(2)
@@ -194,7 +213,7 @@ with col1:
 with col2:
     varis = st.text_input("Varış Yeri (Şehir)", "Balıkesir")
 
-kalkis_saati = st.time_input("Kalkış Saati", datetime.strptime("10:00", "%H:%M").time())
+kalkis_saati = st.time_input("Kalkış Saati", datetime.strptime("16:00", "%H:%M").time())
 
 col3, col4 = st.columns(2)
 with col3:
@@ -206,7 +225,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
     if not kalkis or not varis:
         st.warning("Lütfen kalkış ve varış yerlerini giriniz.")
     else:
-        with st.spinner("Gündüz/Gece oranları ve güneş açıları hesaplanıyor..."):
+        with st.spinner("Gündüz/Gece oranları, güneş batış anları ve açılar hesaplanıyor..."):
             
             def koordinat_bul(sehir):
                 sehir_temiz = turkce_temizle(sehir)
@@ -216,7 +235,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 try:
                     encoded_sehir = urllib.parse.quote(sehir.strip())
                     url = f"https://nominatim.openstreetmap.org/search?q={encoded_sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V9'}
+                    headers = {'User-Agent': 'BusShadowApp-V10'}
                     response = requests.get(url, headers=headers, timeout=3)
                     if response.status_code == 200:
                         data = response.json()
@@ -249,7 +268,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 kalkis_dt = datetime.combine(bugun, kalkis_saati)
                 varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
                 
-                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, sol_dk, sag_dk, tamamen_gece_mi = analyze_sun_exposure(
+                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, sol_dk, sag_dk, gunes_olaylari, tamamen_gece_mi = analyze_sun_exposure(
                     lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100
                 )
                 
@@ -261,11 +280,21 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 m_col2.metric("Mola", f"{toplam_mola_dk} dk")
                 m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
                 
-                # Gündüz ve Gece Oranları ve Saatleri Gösterimi
+                # Gündüz ve Gece Oranları Gösterimi
                 st.markdown("---")
                 col_g, col_ge = st.columns(2)
                 col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
                 col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
+                
+                # Güneş Batış / Doğuş Bilgilendirmesi
+                if gunes_olaylari:
+                    st.markdown("---")
+                    st.subheader("🕒 Rota Üzerindeki Güneş Olayları")
+                    for olay in gunes_olaylari:
+                        saat_str = olay["saat"]
+                        gecen_saat = olay["gecen_sure_dk"] // 60
+                        gecen_dakika = olay["gecen_sure_dk"] % 60
+                        st.info(f"{olay['tur']}: Yolculuğun **{gecen_saat} saat {gecen_dakika} dakikasında** (Saat **{saat_str}** civarında) gerçekleşecektir.")
                 
                 st.markdown("---")
                 st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
