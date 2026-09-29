@@ -142,7 +142,6 @@ def get_solar_position(lat, lon, dt_utc):
     return azimuth_deg, elevation_deg
 
 def en_yakin_sehir_bul(lat, lon):
-    """Verilen koordinata en yakın şehri 81 il veritabanından bulur."""
     en_yakin_il = "Bilinmeyen Konum"
     min_mesafe = float('inf')
     for il, (il_lat, il_lon) in SEHIR_KOORDINATLARI.items():
@@ -222,12 +221,17 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     
     return sol_orani, sag_orani, gunduz_orani, gece_orani, gunduz_sure_dk, gece_sure_dk, sol_sure_dk, sag_sure_dk, gunes_olaylari, False
 
-# Kullanıcı Giriş Alanları
+# Öngörücü (Açılır Menü) Şehir Seçim Listesi Hazırlığı
+iller_gosterim = sorted([il.capitalize() for il in SEHIR_KOORDINATLARI.keys()])
+
 col1, col2 = st.columns(2)
 with col1:
-    kalkis = st.text_input("Kalkış Yeri (Şehir)", "Antalya")
+    kalkis_secim = st.selectbox("Kalkış Yeri (Şehir)", options=iller_gosterim, index=iller_gosterim.index("Antalya"))
 with col2:
-    varis = st.text_input("Varış Yeri (Şehir)", "Balıkesir")
+    varis_secim = st.selectbox("Varış Yeri (Şehir)", options=iller_gosterim, index=iller_gosterim.index("Balıkesir"))
+
+kalkis = kalkis_secim.lower()
+varis = varis_secim.lower()
 
 kalkis_saati = st.time_input("Kalkış Saati", datetime.strptime("16:00", "%H:%M").time())
 
@@ -238,108 +242,84 @@ with col4:
     mola_suresi = st.number_input("Her Mola Süresi (Dakika)", min_value=0, max_value=60, value=20)
 
 if st.button("Gölge Analizini Başlat", type="primary"):
-    if not kalkis or not varis:
-        st.warning("Lütfen kalkış ve varış yerlerini giriniz.")
-    else:
-        with st.spinner("Gündüz/Gece oranları, güneş batış anları ve konumlar hesaplanıyor..."):
+    with st.spinner("Gündüz/Gece oranları, güneş batış anları ve konumlar hesaplanıyor..."):
+        
+        lat1, lon1 = SEHIR_KOORDINATLARI[kalkis]
+        lat2, lon2 = SEHIR_KOORDINATLARI[varis]
+
+        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+        surus_suresi_dk = 480 
+        try:
+            res = requests.get(osrm_url, timeout=5)
+            res_data = res.json()
+            if 'routes' in res_data and len(res_data['routes']) > 0:
+                surus_suresi_dk = int(res_data['routes'][0]['duration'] / 60)
+        except Exception:
+            pass
+        
+        toplam_mola_dk = mola_sayisi * mola_suresi
+        toplam_sure_dk = surus_suresi_dk + toplam_mola_dk
+        
+        bugun = datetime.today().date()
+        kalkis_dt = datetime.combine(bugun, kalkis_saati)
+        varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
+        
+        sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, sol_dk, sag_dk, gunes_olaylari, tamamen_gece_mi = analyze_sun_exposure(
+            lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100
+        )
+        
+        st.success("Analiz Tamamlandı!")
+        st.info(f"📍 **Rota:** {kalkis.capitalize()} ➔ {varis.capitalize()}")
+        
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Sürüş Süresi", f"{surus_suresi_dk // 60} sa {surus_suresi_dk % 60} dk")
+        m_col2.metric("Mola", f"{toplam_mola_dk} dk")
+        m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
+        
+        st.markdown("---")
+        col_g, col_ge = st.columns(2)
+        col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
+        col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
+        
+        if gunes_olaylari:
+            st.markdown("---")
+            st.subheader("🕒 Rota Üzerindeki Güneş Olayları ve Konumları")
+            for olay in gunes_olaylari:
+                saat_str = olay["saat"]
+                gecen_saat = olay["gecen_sure_dk"] // 60
+                gecen_dakika = olay["gecen_sure_dk"] % 60
+                konum_adi = olay["konum"]
+                lat_lon = olay["koordinat"]
+                st.info(f"{olay['tur']}: Yolculuğun **{gecen_saat} saat {gecen_dakika} dakikasında** (Saat **{saat_str}** civarında), **{konum_adi}** yakınlarında (GPS: {lat_lon}) gerçekleşecektir.")
+        
+        st.markdown("---")
+        st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
+        
+        if tamamen_gece_mi:
+            st.info("🌙 Yolculuk tamamen gece saatlerine denk geldiği için doğrudan güneş ışığı maruziyeti yoktur. İstediğiniz koltuğu seçebilirsiniz.")
+        else:
+            st.write("Gündüz seyir süresi baz alınarak hesaplanan taraf analizi:")
             
-            def koordinat_bul(sehir):
-                sehir_temiz = turkce_temizle(sehir)
-                if sehir_temiz in SEHIR_KOORDINATLARI:
-                    return SEHIR_KOORDINATLARI[sehir_temiz]
-                
-                try:
-                    encoded_sehir = urllib.parse.quote(sehir.strip())
-                    url = f"https://nominatim.openstreetmap.org/search?q={encoded_sehir},Turkey&format=json"
-                    headers = {'User-Agent': 'BusShadowApp-V11'}
-                    response = requests.get(url, headers=headers, timeout=3)
-                    if response.status_code == 200:
-                        data = response.json()
-                        if data and len(data) > 0:
-                            return float(data[0]['lat']), float(data[0]['lon'])
-                except Exception:
-                    pass
-                return None, None
-
-            lat1, lon1 = koordinat_bul(kalkis)
-            lat2, lon2 = koordinat_bul(varis)
-
-            if lat1 is None or lat2 is None:
-                st.error(f"'{kalkis}' veya '{varis}' şehri bulunamadı. Lütfen adını kontrol edin.")
-            else:
-                osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-                surus_suresi_dk = 480 
-                try:
-                    res = requests.get(osrm_url, timeout=5)
-                    res_data = res.json()
-                    if 'routes' in res_data and len(res_data['routes']) > 0:
-                        surus_suresi_dk = int(res_data['routes'][0]['duration'] / 60)
-                except Exception:
-                    pass
-                
-                toplam_mola_dk = mola_sayisi * mola_suresi
-                toplam_sure_dk = surus_suresi_dk + toplam_mola_dk
-                
-                bugun = datetime.today().date()
-                kalkis_dt = datetime.combine(bugun, kalkis_saati)
-                varis_dt = kalkis_dt + timedelta(minutes=toplam_sure_dk)
-                
-                sol_gunes_orani, sag_gunes_orani, gündüz_orani, gece_orani, gunduz_dk, gece_dk, sol_dk, sag_dk, gunes_olaylari, tamamen_gece_mi = analyze_sun_exposure(
-                    lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samples=100
-                )
-                
-                st.success("Analiz Tamamlandı!")
-                st.info(f"📍 **Rota:** {kalkis} ➔ {varis}")
-                
-                m_col1, m_col2, m_col3 = st.columns(3)
-                m_col1.metric("Sürüş Süresi", f"{surus_suresi_dk // 60} sa {surus_suresi_dk % 60} dk")
-                m_col2.metric("Mola", f"{toplam_mola_dk} dk")
-                m_col3.metric("Varış Saati", varis_dt.strftime("%H:%M"))
-                
-                st.markdown("---")
-                col_g, col_ge = st.columns(2)
-                col_g.metric("☀️ Gündüz Seyahati Süresi", f"%{gündüz_orani} ({gunduz_dk // 60} sa {gunduz_dk % 60} dk)")
-                col_ge.metric("🌙 Gece Seyahati Süresi", f"%{gece_orani} ({gece_dk // 60} sa {gece_dk % 60} dk)")
-                
-                if gunes_olaylari:
-                    st.markdown("---")
-                    st.subheader("🕒 Rota Üzerindeki Güneş Olayları ve Konumları")
-                    for olay in gunes_olaylari:
-                        saat_str = olay["saat"]
-                        gecen_saat = olay["gecen_sure_dk"] // 60
-                        gecen_dakika = olay["gecen_sure_dk"] % 60
-                        konum_adi = olay["konum"]
-                        lat_lon = olay["koordinat"]
-                        st.info(f"{olay['tur']}: Yolculuğun **{gecen_saat} saat {gecen_dakika} dakikasında** (Saat **{saat_str}** civarında), **{konum_adi}** yakınlarında (GPS: {lat_lon}) gerçekleşecektir.")
-                
-                st.markdown("---")
-                st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
-                
-                if tamamen_gece_mi:
-                    st.info("🌙 Yolculuk tamamen gece saatlerine denk geldiği için doğrudan güneş ışığı maruziyeti yoktur. İstediğiniz koltuğu seçebilirsiniz.")
+            bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
+            
+            with bus_col_sol:
+                sol_saat_metin = f"%{sol_gunes_orani} ({sol_dk // 60} sa {sol_dk % 60} dk)"
+                st.markdown("#### 🪟 Sol Taraf")
+                if sol_gunes_orani <= sag_gunes_orani:
+                    st.success(f"🟢 Gölgede / Az Güneşli\n\n({sol_saat_metin})")
+                    st.markdown("✨ **Tavsiye Edilen**")
                 else:
-                    st.write("Gündüz seyir süresi baz alınarak hesaplanan taraf analizi:")
+                    st.error(f"☀️ Güneş Alır\n\n({sol_saat_metin})")
                     
-                    bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
-                    
-                    with bus_col_sol:
-                        sol_saat_metin = f"%{sol_gunes_orani} ({sol_dk // 60} sa {sol_dk % 60} dk)"
-                        st.markdown("#### 🪟 Sol Taraf")
-                        if sol_gunes_orani <= sag_gunes_orani:
-                            st.success(f"🟢 Gölgede / Az Güneşli\n\n({sol_saat_metin})")
-                            st.markdown("✨ **Tavsiye Edilen**")
-                        else:
-                            st.error(f"☀️ Güneş Alır\n\n({sol_saat_metin})")
-                            
-                    with bus_col_koridor:
-                        st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
-                        
-                    with bus_col_sag:
-                        sag_saat_metin = f"%{sag_gunes_orani} ({sag_dk // 60} sa {sag_dk % 60} dk)"
-                        st.markdown("#### 🪟 Sağ Taraf")
-                        if sag_gunes_orani < sol_gunes_orani:
-                            st.success(f"🟢 Gölgede / Az Güneşli\n\n({sag_saat_metin})")
-                            st.markdown("✨ **Tavsiye Edilen**")
-                        else:
-                            st.error(f"☀️ Güneş Alır\n\n({sag_saat_metin})")
-                            st.markdown("⚠️ **Dikkat**")
+            with bus_col_koridor:
+                st.markdown("<br><center>🚶‍♂️<br><b>Koridor</b></center>", unsafe_allow_html=True)
+                
+            with bus_col_sag:
+                sag_saat_metin = f"%{sag_gunes_orani} ({sag_dk // 60} sa {sag_dk % 60} dk)"
+                st.markdown("#### 🪟 Sağ Taraf")
+                if sag_gunes_orani < sol_gunes_orani:
+                    st.success(f"🟢 Gölgede / Az Güneşli\n\n({sag_saat_metin})")
+                    st.markdown("✨ **Tavsiye Edilen**")
+                else:
+                    st.error(f"☀️ Güneş Alır\n\n({sag_saat_metin})")
+                    st.markdown("⚠️ **Dikkat**")
