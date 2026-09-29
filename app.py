@@ -146,7 +146,7 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
     sol_count = 0
     sag_count = 0
     gunduz_count = 0
-     gece_count = 0
+    gece_count = 0
     
     tr_tz = timezone(timedelta(hours=3))
     
@@ -170,7 +170,6 @@ def analyze_sun_exposure(lat1, lon1, lat2, lon2, kalkis_dt, toplam_sure_dk, samp
         else:
             gece_count += 1
 
-    # Yüzdelik oranlar
     gunduz_orani = round((gunduz_count / samples) * 100)
     gece_orani = round((gece_count / samples) * 100)
     
@@ -290,4 +289,4 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                             st.markdown("✨ **Tavsiye Edilen**")
                         else:
                             st.error(f"☀️ Güneş Alır\n\n(Gündüz Süresine Göre: %{sag_gunes_orani})")
-                            st.markdown("⚠️ **Dikkat**")
+                            st.markdown("⚠️️ **Dikkat**")
