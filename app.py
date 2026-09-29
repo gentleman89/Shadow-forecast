@@ -25,7 +25,6 @@ SEHIR_KOORDINATLARI = {
 }
 
 def turkce_temizle(metin):
-    # Türkçe büyük/küçük harf sorununu çözen akıllı dönüştürücü
     metin = metin.strip().replace('İ', 'i').replace('I', 'ı').lower()
     return metin
 
@@ -55,7 +54,6 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                 if sehir_temiz in SEHIR_KOORDINATLARI:
                     return SEHIR_KOORDINATLARI[sehir_temiz]
                 
-                # İnternet üzerinden arama yedeği
                 try:
                     url = f"https://nominatim.openstreetmap.org/search?q={sehir},Turkey&format=json"
                     headers = {'User-Agent': 'BusShadowApp-V3'}
@@ -72,7 +70,7 @@ if st.button("Gölge Analizini Başlat", type="primary"):
             lat2, lon2 = koordinat_bul(varis)
 
             if lat1 is None or lat2 is None:
-                st.error(f"'{kalkis}' veya '{varis'}' şehri veritabanında bulunamadı. Lütfen listeden bir şehir seçin.")
+                st.error(f"'{kalkis}' veya '{varis}' şehri veritabanında bulunamadı. Lütfen listeden bir şehir seçin.")
             else:
                 osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
                 surus_suresi_dk = 300 
