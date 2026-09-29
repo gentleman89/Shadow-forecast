@@ -29,23 +29,32 @@ if st.button("Gölge Analizini Başlat", type="primary"):
         with st.spinner("Rota ve güneş açıları hesaplanıyor..."):
             def get_coords(city_name):
                 url = f"https://nominatim.openstreetmap.org/search?q={city_name},Turkey&format=json"
-                headers = {'User-Agent': 'BusShadowApp/1.0'}
-                response = requests.get(url, headers=headers).json()
-                if response:
-                    return float(response[0]['lat']), float(response[0]['lon'])
+                headers = {'User-Agent': 'BusShadowApp-V1'}
+                try:
+                    response = requests.get(url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data and len(data) > 0:
+                            return float(data[0]['lat']), float(data[0]['lon'])
+                except Exception:
+                    pass
                 return None, None
 
             lat1, lon1 = get_coords(kalkis)
             lat2, lon2 = get_coords(varis)
 
             if lat1 is None or lat2 is None:
-                st.error("Girilen şehirler bulunamadı. Lütfen geçerli bir şehir adı yazın.")
+                st.error("Girilen şehirler harita servisinde bulunamadı. Lütfen şehir adını kontrol edip tekrar deneyin.")
             else:
                 osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-                res = requests.get(osrm_url).json()
+                try:
+                    res = requests.get(osrm_url, timeout=5)
+                    res_data = res.json()
+                except Exception:
+                    res_data = {}
                 
-                if 'routes' in res and len(res['routes']) > 0:
-                    saris_suresi_sn = res['routes'][0]['duration']
+                if 'routes' in res_data and len(res_data['routes']) > 0:
+                    saris_suresi_sn = res_data['routes'][0]['duration']
                     surus_suresi_dk = int(saris_suresi_sn / 60)
                     
                     toplam_mola_dk = mola_sayisi * mola_suresi
@@ -68,8 +77,8 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                     st.subheader("🚌 Otobüs Koltuk ve Gölge Krokisi")
                     st.write("Yolculuk boyunca güneşin konumuna göre taraf analizi:")
                     
-                    # Görsel Otobüs Krokisi Sütunları
-                    sol_gunes_orani = 25  # Simüle edilmiş oran (İleride gerçek açıyla hesaplanacak)
+                    # Görsel Otobüs Krokisi Sütunları (Simüle Oran)
+                    sol_gunes_orani = 25  
                     sag_gunes_orani = 75  
                     
                     bus_col_sol, bus_col_koridor, bus_col_sag = st.columns([2, 1, 2])
@@ -93,4 +102,4 @@ if st.button("Gölge Analizini Başlat", type="primary"):
                             st.error(f"☀️ Güneş Alır\n\n(Süre: %{sag_gunes_orani})")
                             st.markdown("⚠️ **Dikkat**")
                 else:
-                    st.error("İki şehir arasında karayolu rotası hesaplanamadı.")
+                    st.error("İki şehir arasında karayolu rotası hesaplanamadı. Lütfen tekrar deneyin.")
